@@ -1,0 +1,333 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Sensor
+metadata:
+  name: auto-configure-argocd
+spec:
+  template:
+    serviceAccountName: operate-workflow-sa
+  dependencies:
+    - name: cluster-creation
+      eventSourceName: cluster-created
+      eventName: cluster-created
+  triggers:
+    - template:
+        name: auto-configure-argocd
+        k8s:
+          operation: create
+          source:
+            resource: 
+              apiVersion: argoproj.io/v1alpha1
+              kind: Workflow
+              metadata:
+                generateName: auto-configure-argocd-
+              spec:
+                serviceAccountName: argo-workflow
+                entrypoint: start
+                arguments:
+                  parameters:
+                  - name: product-team-name
+                    value: ""
+                  - name: product-team-account-id
+                    value: ""
+                  - name: cluster-name
+                    value: ""
+                  - name: product-team-members
+                    value: ""
+                templates:
+                - name: start
+                  dag:
+                    tasks:
+                    - name: register-cluster-in-argocd
+                      template: register-cluster-in-argocd
+                      arguments:
+                        parameters:
+                          - name: product-team-name
+                            value: "{{workflow.parameters.product-team-name}}"
+                          - name: product-team-account-id
+                            value: "{{workflow.parameters.product-team-account-id}}"
+                          - name: cluster-name
+                            value: "{{workflow.parameters.cluster-name}}"
+                    - name: configure-user-access
+                      template: configure-user-access
+                      arguments:
+                        parameters:
+                          - name: product-team-name
+                            value: "{{workflow.parameters.product-team-name}}"
+                          - name: product-team-members
+                            value: "{{workflow.parameters.product-team-members}}"
+                    - name: grant-access-to-argocd
+                      template: grant-access-to-argocd
+                      arguments:
+                        parameters:
+                          - name: product-team-name
+                            value: "{{workflow.parameters.product-team-name}}"
+                      dependencies: [configure-user-access]
+                    - name: bootstrap-product-team-repo
+                      template: bootstrap-product-team-repo
+                      arguments:
+                        parameters:
+                          - name: product-team-name
+                            value: "{{workflow.parameters.product-team-name}}"
+                      dependencies: [configure-user-access]
+                - name: bootstrap-product-team-repo
+                  inputs:
+                    parameters:
+                      - name: product-team-name
+                  script:
+                    image: <AWS_ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/register-cluster:latest
+                    command: [bash]
+                    env:
+                      - name: MANAGEMENT_REPO_USERNAME
+                        valueFrom:
+                          secretKeyRef:
+                            name: management-repo-creds
+                            key: username
+                      - name: MANAGEMENT_REPO_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: management-repo-creds
+                            key: password
+                      - name: ARGOCD_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: argocd-creds
+                            key: password
+                    source: |  
+                      echo "Login to Argo CD..."
+                      argocd login argo-cd.k8s-demos.com --username=admin --password=$ARGOCD_PASSWORD --insecure --grpc-web
+                      CLUSTER_URL=$(argocd cluster get {{inputs.parameters.product-team-name}} --grpc-web --output json --insecure | jq .server -r)
+                      echo "Cloning management repo..."
+                      git clone https://$(echo -n $MANAGEMENT_REPO_USERNAME | jq -sRr @uri):$(echo -n $MANAGEMENT_REPO_PASSWORD | jq -sRr @uri)@git-codecommit.eu-central-1.amazonaws.com/v1/repos/{{inputs.parameters.product-team-name}}
+                      cd {{inputs.parameters.product-team-name}}
+                      echo "Adding demo infrastructure application..."
+                      mkdir applications
+                      mkdir manifests
+                      cat <<END > applications/sealed-secrets.yaml
+                      apiVersion: argoproj.io/v1alpha1
+                      kind: Application
+                      metadata:
+                        name: sealed-secrets
+                        namespace: argocd
+                      spec:
+                        project: {{inputs.parameters.product-team-name}}
+                        source:
+                          chart: sealed-secrets
+                          repoURL: https://bitnami-labs.github.io/sealed-secrets
+                          targetRevision: 1.16.1
+                          helm:
+                            releaseName: sealed-secrets
+                        destination:
+                          server: $CLUSTER_URL
+                          namespace: kubeseal
+
+                        syncPolicy:
+                          syncOptions:
+                            - CreateNamespace=true
+                          automated: 
+                            prune: true
+                            selfHeal: true
+                      END
+
+                      git config --global user.name "Argo Workflow Bot"
+                      git config --global user.email "argo-workflow-bot@org.com"
+
+                      git add -A
+                      git commit -am "Initial bootstraping for {{inputs.parameters.product-team-name}}"
+                      git push --set-upstream origin main
+
+                      echo "Sync demo application..."
+                      argocd app sync argocd/{{inputs.parameters.product-team-name}}-bootstrap --grpc-web --insecure
+
+                - name: grant-access-to-argocd
+                  inputs:
+                    parameters:
+                      - name: product-team-name
+                  script:
+                    image: <AWS_ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/register-cluster:latest
+                    command: [bash]
+                    env:
+                      - name: MANAGEMENT_REPO_USERNAME
+                        valueFrom:
+                          secretKeyRef:
+                            name: management-repo-creds
+                            key: username
+                      - name: MANAGEMENT_REPO_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: management-repo-creds
+                            key: password
+                      - name: ARGOCD_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: argocd-creds
+                            key: password
+                    source: |  
+                      echo "Login to Argo CD..."
+                      argocd login argo-cd.k8s-demos.com --username=admin --password=$ARGOCD_PASSWORD --insecure --grpc-web
+                      CLUSTER_URL=$(argocd cluster get {{inputs.parameters.product-team-name}} --grpc-web --output json --insecure | jq .server -r)
+                      echo "Cloning management repo..."
+                      git clone https://$(echo -n $MANAGEMENT_REPO_USERNAME | jq -sRr @uri):$(echo -n $MANAGEMENT_REPO_PASSWORD | jq -sRr @uri)@git-codecommit.eu-central-1.amazonaws.com/v1/repos/management-cluster
+                      cd management-cluster
+                      echo "Creating Argo CD App Project..."
+                      cat <<END > manifests/teams/{{inputs.parameters.product-team-name}}.yaml
+                      apiVersion: argoproj.io/v1alpha1
+                      kind: AppProject
+                      metadata:
+                        name: {{inputs.parameters.product-team-name}}
+                        finalizers:
+                          - resources-finalizer.argocd.argoproj.io
+                      spec:
+                        description: Project for {{inputs.parameters.product-team-name}}
+                        sourceRepos:
+                        - '*'
+                        destinations:
+                        - namespace: '*'
+                          server: $CLUSTER_URL
+                        clusterResourceWhitelist:
+                        - group: '*'
+                          kind: '*'
+                        namespaceResourceWhitelist:
+                        - group: '*'
+                          kind: '*'
+                      END
+                      echo "Creating external secret..."
+                      cat <<END > manifests/argo-cd/templates/{{inputs.parameters.product-team-name}}-external-secret.yaml
+                      apiVersion: external-secrets.io/v1beta1
+                      kind: ExternalSecret
+                      metadata:
+                        name: {{inputs.parameters.product-team-name}}
+                      spec:
+                        refreshInterval: 1m
+                        secretStoreRef:
+                          name: cluster-secret-store
+                          kind: ClusterSecretStore
+                        target:
+                          creationPolicy: "Owner"
+                          name: {{inputs.parameters.product-team-name}}-repo-creds
+                          template:
+                            metadata:
+                              labels:
+                                argocd.argoproj.io/secret-type: repository
+                        dataFrom:
+                          - extract:
+                              key: infra/shared/{{inputs.parameters.product-team-name}}-repo-credentials
+                      END
+                      echo "Creating Argo CD application to sync manifests from product team repo..."
+                      cat <<END > applications/{{inputs.parameters.product-team-name}}-bootstrap.yaml
+                      apiVersion: argoproj.io/v1alpha1
+                      kind: Application
+                      metadata:
+                        name: {{inputs.parameters.product-team-name}}-bootstrap
+                        namespace: argocd
+                        finalizers:
+                          - resources-finalizer.argocd.argoproj.io
+                      spec:
+                        project: default
+                        source:
+                          repoURL: https://git-codecommit.eu-central-1.amazonaws.com/v1/repos/{{inputs.parameters.product-team-name}}
+                          targetRevision: HEAD
+                          path: ./applications
+                        
+                        destination:
+                          server: https://kubernetes.default.svc
+                          namespace: argocd
+
+                        syncPolicy:
+                          syncOptions:
+                            - CreateNamespace=true
+                          automated: 
+                            prune: true
+                            selfHeal: true
+                      END
+                      
+                      echo "Granting permissons to cluster and repository..."
+                      echo "p, role:{{inputs.parameters.product-team-name}}, applications, *, {{inputs.parameters.product-team-name}}/*, allow" > /tmp/{{inputs.parameters.product-team-name}}.txt
+                      echo "g, {{inputs.parameters.product-team-name}}-argocd, role:{{inputs.parameters.product-team-name}}" >> /tmp/{{inputs.parameters.product-team-name}}.txt
+                      yq -i eval '.data."policy.csv" += load_str("/tmp/{{inputs.parameters.product-team-name}}.txt")' manifests/argo-cd/templates/argocd-rbac-cm.yaml
+
+                      git config --global user.name "Argo Workflow Bot"
+                      git config --global user.email "argo-workflow-bot@org.com"
+
+                      git add -A
+                      git commit -am "Grant access to argocd for {{inputs.parameters.product-team-name}}"
+                      git push
+
+                      argocd app sync argocd/teams --grpc-web --insecure
+                      argocd app sync argocd/argo-cd --grpc-web --insecure
+                      argocd app sync argocd/bootstrap --grpc-web --insecure
+                    
+                - name: configure-user-access
+                  inputs:
+                    parameters:
+                      - name: product-team-name
+                      - name: product-team-members
+                  script:
+                    image: <AWS_ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/register-cluster:latest
+                    command: [bash]
+                    env:
+                      - name: MANAGEMENT_REPO_USERNAME
+                        valueFrom:
+                          secretKeyRef:
+                            name: management-repo-creds
+                            key: username
+                      - name: MANAGEMENT_REPO_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: management-repo-creds
+                            key: password
+                    source: |  
+                      echo "Creating git repository for product team..."
+                      aws codecommit create-repository --repository-name {{inputs.parameters.product-team-name}} --region eu-central-1
+                      aws secretsmanager create-secret \
+                        --name infra/shared/{{inputs.parameters.product-team-name}}-repo-credentials \
+                        --secret-string "{\"username\":\"$(echo -n $MANAGEMENT_REPO_USERNAME | jq -sRr @uri)\",\"password\":\"$(echo -n $MANAGEMENT_REPO_PASSWORD | jq -sRr @uri)\",\"type\":\"git\",\"url\":\"https://git-codecommit.eu-central-1.amazonaws.com/v1/repos/{{inputs.parameters.product-team-name}}\"}" --region eu-central-1
+                      aws codecommit create-commit --repository-name={{inputs.parameters.product-team-name}} --branch=main --region=eu-central-1 --put-files "filePath=readme.md,fileContent='cHJvZHVjdC10ZWFtIHJlcG8K'"
+                      echo "Creating cognito group..."
+                      aws cognito-idp create-group --group-name {{inputs.parameters.product-team-name}}-argocd --user-pool-id eu-central-1_sfZSU5iEH	
+ 
+                      echo "Assigning users to group..."
+                      USERS={{inputs.parameters.product-team-members}}
+                      for i in $(echo $USERS | sed "s/,/ /g")
+                      do
+                          aws cognito-idp admin-add-user-to-group --username $i --group-name {{inputs.parameters.product-team-name}}-argocd --user-pool-id eu-central-1_sfZSU5iEH	
+                      done
+                - name: register-cluster-in-argocd
+                  inputs:
+                    parameters:
+                      - name: product-team-name
+                      - name: product-team-account-id
+                      - name: cluster-name
+                  script:
+                    image: <ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/register-cluster:latest
+                    env:
+                      - name: ARGOCD_PASSWORD
+                        valueFrom:
+                          secretKeyRef:
+                            name: argocd-creds
+                            key: password
+                    command: [bash]
+                    source: |
+                      aws eks update-kubeconfig \
+                      --name={{inputs.parameters.cluster-name}} \
+                      --region=eu-central-1 --alias={{inputs.parameters.product-team-name}} \
+                      --role-arn=arn:aws:iam::{{inputs.parameters.product-team-account-id}}:role/ORG_CROSSPLANE_ACCESS
+                      argocd login argo-cd.k8s-demos.com --username=admin --password=$ARGOCD_PASSWORD --insecure --grpc-web
+                      echo "Register cluster into Argo CD..."
+                      argocd cluster add {{inputs.parameters.product-team-name}} --server argo-cd.k8s-demos.com --yes --insecure --grpc-web
+          parameters:
+            - src:
+                dependencyName: cluster-creation
+                dataKey: body.data.productTeamName
+              dest: spec.arguments.parameters.0.value
+            - src:
+                dependencyName: cluster-creation
+                dataKey: body.data.productTeamAccountId
+              dest: spec.arguments.parameters.1.value
+            - src:
+                dependencyName: cluster-creation
+                dataKey: body.data.clusterName
+              dest: spec.arguments.parameters.2.value
+            - src:
+                dependencyName: cluster-creation
+                dataKey: body.data.productTeamMembers
+              dest: spec.arguments.parameters.3.value

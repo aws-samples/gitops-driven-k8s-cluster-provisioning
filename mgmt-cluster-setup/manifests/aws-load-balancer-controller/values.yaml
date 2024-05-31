@@ -1,0 +1,11 @@
+aws-load-balancer-controller:
+  clusterName: management
+  image:
+    repository: 602401143452.dkr.ecr.eu-central-1.amazonaws.com/amazon/aws-load-balancer-controller
+  serviceAccount:
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::<AWS_ACCOUNT_ID>:role/management-alb-controller-20230901121413343000000001
+    create: true
+    name: aws-load-balancer-controller
+
+  

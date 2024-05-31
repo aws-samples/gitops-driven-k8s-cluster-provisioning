@@ -1,0 +1,11 @@
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: argocd
+  namespace: argocd
+spec:
+  targetType: ip 
+  serviceRef:
+    name: argo-cd-argocd-server
+    port: 443
+  targetGroupARN: arn:aws:elasticloadbalancing:eu-central-1:<AWS_ACCOUNT_ID>:targetgroup/ing-20230901134953899900000001/f56f22d8c7532e7c

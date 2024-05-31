@@ -1,0 +1,9 @@
+apiVersion: s3.aws.upbound.io/v1beta1
+kind: Bucket
+metadata:
+  name: hello-crossplane-37404729d789
+spec:
+  forProvider:
+    region: eu-central-1
+  providerConfigRef:
+    name: default

@@ -1,0 +1,677 @@
+apiVersion: apiextensions.crossplane.io/v1
+kind: Composition
+metadata:
+  name: amazon-eks-cluster
+  labels:
+    provider: aws
+    service: eks
+    compute: managed
+spec:
+  writeConnectionSecretsToNamespace: crossplane-system
+  compositeTypeRef:
+    apiVersion: eks.blog.io/v1beta1
+    kind: EKSCluster
+
+  patchSets:
+    - name: common-parameters
+      patches:
+        - fromFieldPath: "spec.parameters.region"
+          toFieldPath: "spec.forProvider.region"
+
+  resources:
+    - name: vpc
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: VPC
+        spec:
+          forProvider:
+            enableDnsSupport: true
+            enableDnsHostNames: true
+            tags:
+              Name: ""
+      patches:    
+        - type: PatchSet
+          patchSetName: common-parameters      
+        - fromFieldPath: spec.parameters.vpc-cidrBlock
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.parameters.vpc-name
+          toFieldPath: spec.forProvider.tags.Name
+
+    - name: internetgateway
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: InternetGateway
+        metadata:
+          labels:
+            type: igw
+        spec:
+          forProvider:
+            vpcIdSelector:
+              matchControllerRef: true
+            tags:
+              Name: ""    
+      patches:    
+        - type: PatchSet
+          patchSetName: common-parameters 
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-igw"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required
+
+    - name: subnet-public-1
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            type: subnet
+            visibility: public
+            name: public-1
+        spec:
+          forProvider:
+            mapPublicIpOnLaunch: true
+            vpcIdSelector:
+              matchControllerRef: true
+            tags:
+              Name: ""
+              kubernetes.io/role/elb: "1"
+      patches:             
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+              - fromFieldPath: spec.parameters.subnet1-public-name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required
+        - type: PatchSet
+          patchSetName: common-parameters      
+        - fromFieldPath: spec.parameters.subnet1-public-cidrBlock
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.parameters.subnet1-public-availabilityZone
+          toFieldPath: spec.forProvider.availabilityZone
+        - fromFieldPath: spec.parameters.subnet1-public-availabilityZone
+          toFieldPath: metadata.labels.zone     
+
+    - name: subnet-public-2
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            type: subnet
+            visibility: public      
+            name: public-2    
+        spec:
+          forProvider:
+            mapPublicIpOnLaunch: true
+            vpcIdSelector:
+              matchControllerRef: true
+            tags:
+              Name: ""
+              kubernetes.io/role/elb: "1"
+      patches:             
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+              - fromFieldPath: spec.parameters.subnet2-public-name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required
+        - type: PatchSet
+          patchSetName: common-parameters      
+        - fromFieldPath: spec.parameters.subnet2-public-cidrBlock
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.parameters.subnet2-public-availabilityZone
+          toFieldPath: spec.forProvider.availabilityZone
+        - fromFieldPath: spec.parameters.subnet2-public-availabilityZone
+          toFieldPath: metadata.labels.zone  
+
+    - name: subnet-private-1
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            type: subnet
+            visibility: private
+            name: private-1          
+        spec:
+          forProvider:
+            mapPublicIpOnLaunch: false
+            vpcIdSelector:
+              matchControllerRef: true
+            tags:
+              Name: ""
+              kubernetes.io/role/internal-elb: "1"
+      patches:             
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+              - fromFieldPath: spec.parameters.subnet1-private-name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required
+        - type: PatchSet
+          patchSetName: common-parameters      
+        - fromFieldPath: spec.parameters.subnet1-private-cidrBlock
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.parameters.subnet1-private-availabilityZone
+          toFieldPath: spec.forProvider.availabilityZone
+        - fromFieldPath: spec.parameters.subnet1-private-availabilityZone
+          toFieldPath: metadata.labels.zone                   
+          
+    - name: subnet-private-2
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Subnet
+        metadata:
+          labels:
+            type: subnet
+            visibility: private    
+            name: private-2       
+        spec:
+          forProvider:
+            mapPublicIpOnLaunch: false
+            vpcIdSelector:
+              matchControllerRef: true
+            tags:
+              Name: ""
+              kubernetes.io/role/internal-elb: "1"
+      patches:             
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+              - fromFieldPath: spec.parameters.subnet2-private-name
+            strategy: string
+            string:
+              fmt: "%s-%s"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required
+        - type: PatchSet
+          patchSetName: common-parameters      
+        - fromFieldPath: spec.parameters.subnet2-private-cidrBlock
+          toFieldPath: spec.forProvider.cidrBlock
+        - fromFieldPath: spec.parameters.subnet2-private-availabilityZone
+          toFieldPath: spec.forProvider.availabilityZone
+        - fromFieldPath: spec.parameters.subnet2-private-availabilityZone
+          toFieldPath: metadata.labels.zone             
+
+    - name: elastic-ip-1
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: EIP
+        metadata:
+          labels:
+            type: eip-33
+        spec:
+          forProvider:
+            vpc: true
+      patches:    
+        - type: PatchSet
+          patchSetName: common-parameters     
+
+    - name: elastic-ip-2
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: EIP
+        metadata:
+          labels:
+            type: eip-44      
+        spec:
+          forProvider:
+            vpc: true
+      patches:    
+        - type: PatchSet
+          patchSetName: common-parameters     
+
+    - name: natgateway-1
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: NATGateway
+        metadata:
+          labels:
+            type: natgw-1
+        spec:
+          forProvider:
+            allocationIdSelector:
+              matchLabels:
+                type: eip-33
+            vpcIdSelector:
+              matchControllerRef: true
+            subnetIdSelector:
+              matchLabels:
+                type: subnet
+                visibility: public      
+                name: public-1             
+            tags:
+              Name: ""                
+      patches:             
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-nat-gateway-1"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required
+        - type: PatchSet
+          patchSetName: common-parameters      
+        - fromFieldPath: spec.parameters.subnet1-public-availabilityZone
+          toFieldPath: spec.forProvider.subnetIdSelector.matchLabels.zone
+
+    - name: natgateway-2
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: NATGateway
+        metadata:
+          labels:
+            type: natgw-2
+        spec:
+          forProvider:
+            allocationIdSelector:
+              matchLabels:
+                type: eip-44
+            vpcIdSelector:
+              matchControllerRef: true   
+            subnetIdSelector:
+              matchLabels:
+                type: subnet
+                visibility: public    
+                name: public-2           
+            tags:
+              Name: ""                
+      patches:             
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-nat-gateway-2"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required
+        - type: PatchSet
+          patchSetName: common-parameters      
+        - fromFieldPath: spec.parameters.subnet2-public-availabilityZone
+          toFieldPath: spec.forProvider.subnetIdSelector.matchLabels.zone       
+
+    - name: routetable-public
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: RouteTable
+        metadata:
+          labels:
+            name: public-rt
+        spec:
+          forProvider:
+            vpcIdSelector:
+              matchControllerRef: true              
+            tags:
+              Name: ""
+      patches:    
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-public-route-table"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required      
+        - type: PatchSet
+          patchSetName: common-parameters 
+        - fromFieldPath: spec.parameters.subnet1-public-availabilityZone
+          toFieldPath: spec.forProvider.associations[0].subnetIdSelector.matchLabels.zone 
+        - fromFieldPath: spec.parameters.subnet2-public-availabilityZone
+          toFieldPath: spec.forProvider.associations[1].subnetIdSelector.matchLabels.zone 
+
+    - name: routetable-public-association-1
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: RouteTableAssociation
+        spec:
+          forProvider:
+            routeTableIdSelector:
+              matchLabels:
+                name: public-rt
+            subnetIdSelector:
+              matchLabels:
+                type: subnet
+                visibility: public   
+                name: public-1      
+      patches:    
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-public-route-table-association"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required      
+        - type: PatchSet
+          patchSetName: common-parameters 
+
+    - name: routetable-public-association-2
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: RouteTableAssociation
+        spec:
+          forProvider:
+            routeTableIdSelector:
+              matchLabels:
+                name: public-rt
+            subnetIdSelector:
+              matchLabels:
+                type: subnet
+                visibility: public   
+                name: public-2   
+      patches:    
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-public-route-table-association"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required      
+        - type: PatchSet
+          patchSetName: common-parameters 
+
+    - name: routetable-public-rule
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Route
+        spec:
+          forProvider:
+            destinationCidrBlock: 0.0.0.0/0
+            routeTableIdSelector:
+              matchLabels:
+                name: public-rt
+            gatewayIdSelector:
+              matchLabels:
+                type: igw
+      patches:    
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-public-route-rule"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required      
+        - type: PatchSet
+          patchSetName: common-parameters 
+
+    - name: routetable-private-1
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: RouteTable
+        metadata:
+          labels:
+            name: private-rt-1
+        spec:
+          forProvider:
+            vpcIdSelector:
+              matchControllerRef: true                
+            tags:
+              Name: ""
+      patches:    
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-private-route-table-1"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required      
+        - type: PatchSet
+          patchSetName: common-parameters           
+        - fromFieldPath: spec.parameters.subnet1-public-availabilityZone
+          toFieldPath: spec.forProvider.associations[0].subnetIdSelector.matchLabels.zone 
+
+    - name: routetable-private-association-1
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: RouteTableAssociation
+        spec:
+          forProvider:
+            routeTableIdSelector:
+              matchLabels:
+                name: private-rt-1
+            subnetIdSelector:
+              matchLabels:
+                type: subnet
+                visibility: private
+                name: private-1      
+      patches:    
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-public-route-table-association"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required      
+        - type: PatchSet
+          patchSetName: common-parameters 
+
+    - name: routetable-private-rule-1
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Route
+        spec:
+          forProvider:
+            destinationCidrBlock: 0.0.0.0/0
+            routeTableIdSelector:
+              matchLabels:
+                name: private-rt-1
+            natGatewayIdSelector:
+              matchLabels:
+                type: natgw-1
+      patches:    
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-public-route-rule"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required      
+        - type: PatchSet
+          patchSetName: common-parameters 
+
+    - name: routetable-private-2
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: RouteTable
+        metadata:
+          labels:
+            name: private-rt-2
+        spec:
+          forProvider:
+            vpcIdSelector:
+              matchControllerRef: true          
+            tags:
+              Name: ""
+      patches:    
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-private-route-table-2"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required      
+        - type: PatchSet
+          patchSetName: common-parameters   
+        - fromFieldPath: spec.parameters.subnet2-public-availabilityZone
+          toFieldPath: spec.forProvider.associations[0].subnetIdSelector.matchLabels.zone 
+
+    - name: routetable-private-association-2
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: RouteTableAssociation
+        spec:
+          forProvider:
+            routeTableIdSelector:
+              matchLabels:
+                name: private-rt-2
+            subnetIdSelector:
+              matchLabels:
+                type: subnet
+                visibility: private
+                name: private-2      
+      patches:    
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-public-route-table-association"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required      
+        - type: PatchSet
+          patchSetName: common-parameters 
+
+    - name: routetable-private-rule-2
+      base:
+        apiVersion: ec2.aws.upbound.io/v1beta1
+        kind: Route
+        spec:
+          forProvider:
+            destinationCidrBlock: 0.0.0.0/0
+            routeTableIdSelector:
+              matchLabels:
+                name: private-rt-2
+            natGatewayIdSelector:
+              matchLabels:
+                type: natgw-2
+      patches:    
+        - type: CombineFromComposite
+          combine:
+            variables:
+              - fromFieldPath: spec.parameters.vpc-name
+            strategy: string
+            string:
+              fmt: "%s-private-route-rule-1"
+          toFieldPath: spec.forProvider.tags.Name
+          policy:
+            fromFieldPath: Required      
+        - type: PatchSet
+          patchSetName: common-parameters 
+
+    - name: eks-cluster
+      base:
+        apiVersion: eks.aws.upbound.io/v1beta1
+        kind: Cluster
+        spec:
+          forProvider:
+            vpcConfig:
+              - endpointPrivateAccess: false
+                endpointPublicAccess: true
+                subnetIdSelector:
+                  matchLabels:
+                    type: subnet
+      patches:    
+        - type: PatchSet
+          patchSetName: common-parameters      
+        - fromFieldPath: "spec.parameters.k8s-version"
+          toFieldPath: "spec.forProvider.version"            
+        - fromFieldPath: "metadata.uid"
+          toFieldPath: "spec.writeConnectionSecretToRef.name"
+          transforms:
+            - type: string
+              string:
+                fmt: "%s-ekscluster-connection"            
+        - fromFieldPath: "spec.parameters.cluster-role"
+          toFieldPath: "spec.forProvider.roleArn"            
+
+    - name: eks-nodegroup
+      base:
+        apiVersion: eks.aws.upbound.io/v1beta1
+        kind: NodeGroup
+        spec:
+          forProvider:
+            instanceTypes: 
+              - m5.large            
+            scalingConfig:
+              - minSize: 0
+                desiredSize: 2
+                maxSize: 2
+            subnetIdSelector:
+              matchLabels:
+                type: subnet
+                visibility: private                 
+            clusterNameSelector:
+              matchControllerRef: true
+      patches:    
+        - type: PatchSet
+          patchSetName: common-parameters      
+        - fromFieldPath: "spec.parameters.workers-size"
+          toFieldPath: "spec.forProvider.scalingConfig[0].desiredSize"    
+        # - fromFieldPath: "spec.parameters.workers-size"
+        #   toFieldPath: "spec.forProvider.scalingConfig[0].maxSize"      
+        - fromFieldPath: "spec.parameters.workload-type"
+          toFieldPath: "spec.forProvider.amiType"            
+          transforms:
+          - type: map
+            map:
+              gpu: AL2_x86_64_GPU
+              non-gpu: AL2_x86_64        
+        - fromFieldPath: "spec.parameters.workernode-role"
+          toFieldPath: "spec.forProvider.nodeRoleArn"          
+
+    - name: eks-cluster-authentication
+      base:
+        apiVersion: eks.aws.upbound.io/v1beta1
+        kind: ClusterAuth
+        spec:
+          forProvider:
+            clusterNameSelector:
+              matchControllerRef: true
+          writeConnectionSecretToRef:
+            name: cluster-conn
+            namespace: crossplane-system
+      patches:    
+        - type: PatchSet
+          patchSetName: common-parameters      

@@ -1,0 +1,15 @@
+apiVersion: external-secrets.io/v1beta1
+kind: ExternalSecret
+metadata:
+  name: management-repo-creds
+spec:
+  refreshInterval: 1m
+  secretStoreRef:
+    name: cluster-secret-store
+    kind: ClusterSecretStore
+  target:
+    creationPolicy: "Owner"
+    name: management-repo-creds
+  dataFrom:
+    - extract:
+        key: infra/shared/mgmt-cluster-repo-credentials
