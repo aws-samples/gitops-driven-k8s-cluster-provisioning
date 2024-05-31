@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: argocd-cm
+data:
+  # Enable OIDC between Argo CD and Cognito
+  url: https://argo-cd.k8s-demos.com
+  oidc.config: |
+    name: Cognito
+    issuer:
+    clientID:
+    clientSecret:
+    requestedScopes: ["openid", "profile", "email"]
+    requestedIDTokenClaims: {"groups": {"essential": true}}

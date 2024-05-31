@@ -1,0 +1,11 @@
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: argo-workflows
+  namespace: argo
+spec:
+  targetType: ip 
+  serviceRef:
+    name: argo-workflows-server
+    port: 2746
+  targetGroupARN: arn:aws:elasticloadbalancing:eu-central-1:<AWS_ACCOUNT_ID>:targetgroup/ing-20230911192845972000000001/c7938ddb2f3cf74e

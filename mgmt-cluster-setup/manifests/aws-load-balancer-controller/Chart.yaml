@@ -1,0 +1,9 @@
+apiVersion: v2
+name: aws-load-balancer-controller
+description: A helm chart to deploy aws-load-balancer-controller
+type: application
+version: 1.0.0
+dependencies:
+- name: aws-load-balancer-controller
+  version: 1.4.8
+  repository: https://aws.github.io/eks-charts

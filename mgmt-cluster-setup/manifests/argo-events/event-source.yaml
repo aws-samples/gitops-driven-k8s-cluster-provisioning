@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: EventSource
+metadata:
+  name: cluster-created
+spec:
+  template:
+    serviceAccountName: operate-workflow-sa
+  resource:
+    cluster-created:
+      namespace: crossplane-system
+      group: ""
+      version: v1
+      resource: configmaps
+      eventTypes:
+        - ADD
+      filter:
+        afterStart: true

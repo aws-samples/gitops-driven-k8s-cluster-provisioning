@@ -1,0 +1,9 @@
+apiVersion: v2
+name: crossplane
+description: A helm chart to deploy crossplane
+type: application
+version: 1.0.0
+dependencies:
+- name: crossplane
+  version: 1.13.0-rc.0.435.gddb42eec
+  repository: https://charts.crossplane.io/master/

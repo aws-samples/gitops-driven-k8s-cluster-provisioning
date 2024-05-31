@@ -1,0 +1,24 @@
+argo-cd:
+  configs:
+    cm:
+      create: false
+    rbac:
+      create: false
+
+  redis-ha:
+    enabled: true
+
+  global:
+
+  controller:
+    replicas: 1
+
+  repoServer:
+    replicas: 2
+
+
+  applicationSet:
+    replicas: 2
+
+  server:
+    replicas: 2

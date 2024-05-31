@@ -1,0 +1,4 @@
+argo-workflows:
+  server:
+    secure: true
+    extraArgs: [--auth-mode=server]

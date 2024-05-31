@@ -1,0 +1,39 @@
+apiVersion: eks.blog.io/v1beta1
+kind: EKSCluster
+metadata:
+  name: crossplane-production-cluster
+spec:
+  parameters:
+    region: eu-central-1
+    vpc-name: "Product-Team-A"
+    vpc-cidrBlock: "192.168.0.0/16"
+
+    subnet1-public-name: "product-team-a-public-sn-1"
+    subnet1-public-cidrBlock: "192.168.0.0/24"
+    subnet1-public-availabilityZone: "eu-central-1a"
+    
+    subnet2-public-name: "product-team-a-public-sn-2"
+    subnet2-public-cidrBlock: "192.168.1.0/24"
+    subnet2-public-availabilityZone: "eu-central-1b"    
+
+    subnet1-private-name: "product-team-a-private-sn-1"
+    subnet1-private-cidrBlock: "192.168.2.0/24"
+    subnet1-private-availabilityZone: "eu-central-1a"
+    
+    subnet2-private-name: "product-team-a-private-sn-2"
+    subnet2-private-cidrBlock: "192.168.3.0/24"
+    subnet2-private-availabilityZone: "eu-central-1b"     
+
+    cluster-role: arn:aws:iam::<AWS_ACCOUNT_ID>:role/ClusterRole
+    workernode-role: arn:aws:iam::<AWS_ACCOUNT_ID>:role/PRODUCT_TEAM_A_WORKER_NODE
+
+    k8s-version: "1.27"
+    workload-type: "non-gpu"
+    workers-size: 0
+
+  compositionRef:
+    name: amazon-eks-cluster
+
+  writeConnectionSecretToRef:
+    namespace: crossplane-system
+    name: crossplane-cluster-connection
